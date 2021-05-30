@@ -10,9 +10,11 @@
 
 <br>
 
-## 分支介绍 - default
+## 分支介绍 - path-match
 
-默认方式使用`log-helper`，不添加任何额外配置。
+采用URL过滤的方式，为项目提供细粒度的日志处理能力。
+
+考虑到开发者有时可能会有不同的日志处理需求，例如部分业务需要**打印全日志**，部分业务只需要**打印错误日志**，还有部分核心业务为了适应数据统计需求而需要**存储数据库**等。
 
 ### 一、引入maven依赖
 
@@ -26,45 +28,81 @@
 
 <br>
 
-### 二、编写控制层接口
+### 二、编写过滤配置
 
-#### 1、无异常接口示例
+#### 1、注入`LogFilterChainHolder`
 
 ```java
-@RequestMapping(value = "body",method = RequestMethod.POST)
-public User post(@RequestBody User user){
-    return user;
+@Configuration
+public class LogHelperConfig {
+    @Bean
+    LogFilterChainHolder logFilterChainHolder(){
+        LinkedHashMap<String, String> filterChainDefinitionMap = new LinkedHashMap<>();
+        //路径为/**下的接口会由LogMode.ALL对应的日志处理器处理
+        //LogMode.ALL == "ALL"
+        filterChainDefinitionMap.put("/**", LogMode.ALL);
+        //路径为/body/**下的接口会由LogMode.ERROR对应的日志处理器处理
+        filterChainDefinitionMap.put("/body/**", LogMode.ERROR);
+        return new LogFilterChainHolder(filterChainDefinitionMap);
+    }
 }
 ```
 
-接口产生调用时，`log-helper`会自动帮助开发者生成相关info级别日志信息。
+有了这层配置之后，细粒度的日志处理配置即可在全局生效了。
+
+需要匹配其他URL规则时，只需不断为`filterChainDefinitionMap`添加元素即可。
+
+<br><br>
+
+### 补充说明
+
+#### 1、URL匹配
+
+`filterChainDefinitionMap`过滤器链采用**Ant**风格的模式匹配，主要规则如下：
+
+| 通配符 | 说明                    |
+| ------ | ----------------------- |
+| ?      | 匹配任何单字符          |
+| *      | 匹配0个或任意数量的字符 |
+| **     | 匹配0个或更多的目录     |
+
+匹配举例如下：
+
+| URL          | 说明                                                  |
+| ------------ | ----------------------------------------------------- |
+| /app/*.x     | 匹配所有在app路径下的.x文件                           |
+| /app/p?ttern | 匹配/app/pattern、/app/pXttern等，但不匹配/app/pttern |
+| /**/example  | 匹配/app/example、/app/foo/example、/example等        |
+| /\*\*/\*.jsp | 匹配任何.jsp文件                                      |
 
 <br>
 
-#### 2、异常接口示例
+另外，匹配采用**优先匹配后置规则**的方式。
+
+举例：
 
 ```java
-@RequestMapping(value = "myError",method = RequestMethod.GET)
-public String error(User user){
-    throw new RuntimeException("some error occurs...");
-}
+filterChainDefinitionMap.put("/**", LogMode.ALL);
+filterChainDefinitionMap.put("/body/**", LogMode.ERROR);
+//这种情况下，有接口进来时先尝试匹配/body/**，匹配不成功才会尝试匹配/**
 ```
-
-接口产生调用时，`log-helper`会自动帮助开发者生成相关error级别日志信息，并打印异常堆栈。
-
-在开发者不使用全局异常处理器下，Spring默认的异常处理器还会多打印一次异常堆栈。但考虑到全局异常处理器往往是有存在的必要的，为了让异常处理器开发者能够只需要关心如何控制异常情况下的<font color='red'>接口返回内容</font>，而无需额外关注如何记录<font color='red'>异常堆栈信息</font>，`log-helper`对异常堆栈也做了相关处理。
 
 <br>
 
-#### 3、文件上传接口示例
+#### 2、默认提供的日志处理器列表
 
-```java
-@RequestMapping(value = "file",method = RequestMethod.POST)
-public String get(@RequestParam("file")MultipartFile file){
-    return file.getOriginalFilename();
-}
-```
+这里列出了`log-helper`框架原生提供的日志配置项值与日志处理器的对应关系。
 
-文件可能过大，不宜采用和一般参数相同的处理方式，所以文件参数在`log-helper`中做了单独处理。
+| 配置项值        | 日志处理器        | 说明                                                         |
+| --------------- | ----------------- | ------------------------------------------------------------ |
+| `LogMode.ALL`   | `LogAllHandler`   | 全日志打印                                                   |
+| `LogMode.INFO`  | `LogInfoHandler`  | 仅接口无异常时打印<br>（便于开发者实现自己的异常时日志处理器） |
+| `LogMode.ERROR` | `LogErrorHandler` | 仅接口发生异常时打印                                         |
+| `LogMode.NONE`  | `LogNoneHandler`  | 不打印任何日志                                               |
 
-对于文件参数，只会打印文件名称及文件大小。
+<br>
+
+#### 3、自定义日志处理器
+
+请参考分支 custom-logHandler
+
