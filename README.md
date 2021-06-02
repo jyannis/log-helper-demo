@@ -10,11 +10,9 @@
 
 <br>
 
-## 分支介绍 - path-match
+## 分支介绍 - custom-logHandler
 
-采用URL过滤的方式，为项目提供细粒度的日志处理能力。
-
-考虑到开发者有时可能会有不同的日志处理需求，例如部分业务需要**打印全日志**，部分业务只需要**打印错误日志**，还有部分核心业务为了适应数据统计需求而需要**存储数据库**等。
+根据业务需要，自定义日志处理器。
 
 ### 一、引入maven依赖
 
@@ -22,87 +20,97 @@
 		<dependency>
 			<groupId>top.jyannis</groupId>
 			<artifactId>log-helper</artifactId>
-			<version>0.1.2</version>
+			<version>${log-helper.version}</version>
 		</dependency>
 ```
 
 <br>
 
-### 二、编写过滤配置
+### 二、使用自定义日志处理器
 
-#### 1、注入`LogFilterChainHolder`
+以常见的**日志需要落库**的需求举例。
+
+#### 1、编写自定义日志处理器
+
+为了便于持久层调用（dao层调用），我们可以直接将处理器注册为组件。（也可以不注册，根据开发者需要即可）
+
+这里只是为了演示，所以就不做具体的落库操作了，以注释代替。
 
 ```java
-@Configuration
-public class LogHelperConfig {
-    @Bean
-    LogFilterChainHolder logFilterChainHolder(){
-        LinkedHashMap<String, String> filterChainDefinitionMap = new LinkedHashMap<>();
-        //路径为/**下的接口会由LogMode.ALL对应的日志处理器处理
-        //LogMode.ALL == "ALL"
-        filterChainDefinitionMap.put("/**", LogMode.ALL);
-        //路径为/body/**下的接口会由LogMode.ERROR对应的日志处理器处理
-        filterChainDefinitionMap.put("/body/**", LogMode.ERROR);
-        return new LogFilterChainHolder(filterChainDefinitionMap);
+/**
+ * @author Jyannis
+ * @version 1.0 update on 2021/5/30
+ */
+@Component
+public class LogStoreHandler extends AbstractLogHandler {
+
+    /**
+     * 注入dao
+     * autowire dao
+     */
+//    @Autowired
+//    private MyDao myDao;
+
+    @Override
+    public void processAround(LogInfo logInfo) {
+        /*
+        存库
+        store logInfo
+         */
+//        myDao.insert(logInfo);
     }
+
+    @Override
+    public void processAfterThrow(LogInfo logInfo) {
+        /*
+        存库
+        store logInfo
+         */
+//        myDao.insert(logInfo);
+    }
+
 }
 ```
 
-有了这层配置之后，细粒度的日志处理配置即可在全局生效了。
-
-需要匹配其他URL规则时，只需不断为`filterChainDefinitionMap`添加元素即可。
-
-<br><br>
-
-### 补充说明
-
-#### 1、URL匹配
-
-`filterChainDefinitionMap`过滤器链采用**Ant**风格的模式匹配，主要规则如下：
-
-| 通配符 | 说明                    |
-| ------ | ----------------------- |
-| ?      | 匹配任何单字符          |
-| *      | 匹配0个或任意数量的字符 |
-| **     | 匹配0个或更多的目录     |
-
-匹配举例如下：
-
-| URL          | 说明                                                  |
-| ------------ | ----------------------------------------------------- |
-| /app/*.x     | 匹配所有在app路径下的.x文件                           |
-| /app/p?ttern | 匹配/app/pattern、/app/pXttern等，但不匹配/app/pttern |
-| /**/example  | 匹配/app/example、/app/foo/example、/example等        |
-| /\*\*/\*.jsp | 匹配任何.jsp文件                                      |
-
 <br>
 
-另外，匹配采用**优先匹配后置规则**的方式。
+#### 2、编写配置文件
 
-举例：
+1. 将我们自定义编写的日志处理器添加进`LogHandlerHolder`中，并为它添加一个key（下例中为"store"）
+
+   注：由于本例中将`LogStoreHandler`注册为了组件，所以要用参数注入或者`@Autowired`注入的方式，不能直接手动new。难以理解这一点的同学请搜索“Spring注入方式”进行学习。
+
+2. 在`LogFilterChainHolder`中添加需要的过滤器链
 
 ```java
-filterChainDefinitionMap.put("/**", LogMode.ALL);
-filterChainDefinitionMap.put("/body/**", LogMode.ERROR);
-//这种情况下，有接口进来时先尝试匹配/body/**，匹配不成功才会尝试匹配/**
+/**
+ * @author Jyannis
+ * @version 1.0 update on 2021/5/30
+ */
+@Configuration
+public class LogHelperConfig {
+    
+    @Bean
+    LogHandlerHolder logHandlerHolder(LogStoreHandler logStoreHandler){
+        LogHandlerHolder logHandlerHolder = new LogHandlerHolder();
+        logHandlerHolder.addLogHandler("STORE",logStoreHandler);
+        return logHandlerHolder;
+    }
+
+    @Bean
+    LogFilterChainHolder logFilterChainHolder(){
+        LinkedHashMap<String, String> filterChainDefinitionMap = new LinkedHashMap<>();
+        filterChainDefinitionMap.put("/**", LogMode.ALL);
+        filterChainDefinitionMap.put("/body", "STORE");
+        return new LogFilterChainHolder(filterChainDefinitionMap);
+    }
+    
+}
+
 ```
 
-<br>
-
-#### 2、默认提供的日志处理器列表
-
-这里列出了`log-helper`框架原生提供的日志配置项值与日志处理器的对应关系。
-
-| 配置项值        | 日志处理器        | 说明                                                         |
-| --------------- | ----------------- | ------------------------------------------------------------ |
-| `LogMode.ALL`   | `LogAllHandler`   | 全日志打印                                                   |
-| `LogMode.INFO`  | `LogInfoHandler`  | 仅接口无异常时打印<br>（便于开发者实现自己的异常时日志处理器） |
-| `LogMode.ERROR` | `LogErrorHandler` | 仅接口发生异常时打印                                         |
-| `LogMode.NONE`  | `LogNoneHandler`  | 不打印任何日志                                               |
+此时启动项目，访问接口`/body`，即可触发`LogStoreHandler`来完成日志处理。
 
 <br>
 
-#### 3、自定义日志处理器
-
-请参考分支 custom-logHandler
-
+<br>
