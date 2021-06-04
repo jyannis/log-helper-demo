@@ -8,11 +8,19 @@
 
 <br>
 
-### 项目源码
+### log-helper-demo项目源码
 
 | Github                                     | Gitee                                     |
 | ------------------------------------------ | ----------------------------------------- |
 | https://github.com/jyannis/log-helper-demo | https://gitee.com/jyannis/log-helper-demo |
+
+<br>
+
+### log-helper项目源码
+
+| Github                                | Gitee                                |
+| ------------------------------------- | ------------------------------------ |
+| https://github.com/jyannis/log-helper | https://gitee.com/jyannis/log-helper |
 
 <br>
 
@@ -29,11 +37,14 @@
 
 ## 分支介绍
 
-| BRANCH  | DESCRIPTION                            |
-| ------- | -------------------------------------- |
-| default | 简单使用`log-helper`，无任何额外配置。 |
-|         |                                        |
-|         |                                        |
+建议按序阅读。
+
+| BRANCH            | DESCRIPTION                                         |
+| ----------------- | --------------------------------------------------- |
+| default           | 简单使用`log-helper`，无任何额外配置。              |
+| path-match        | URL过滤接口，为项目提供细粒度定制化的日志处理能力。 |
+| custom-logHandler | 自定义日志处理器，根据业务需要调整日志处理方式。    |
+| custom-logInfo    | 自定义日志数据实体，补充业务需要的其他日志信息。    |
 
 <br>
 
