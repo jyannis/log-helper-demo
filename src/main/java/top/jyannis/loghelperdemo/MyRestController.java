@@ -1,5 +1,6 @@
 package top.jyannis.loghelperdemo;
 
+import io.swagger.annotations.ApiOperation;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -11,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class MyRestController {
 
     @RequestMapping(value = "body",method = RequestMethod.POST)
+    @ApiOperation(value = "a body POST request")
     public User post(@RequestBody User user){
         return user;
     }

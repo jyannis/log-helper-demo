@@ -10,9 +10,9 @@
 
 <br>
 
-## 分支介绍 - custom-logHandler
+## 分支介绍 - custom-logInfo
 
-根据业务需要，自定义日志处理器。
+根据业务需要，自定义日志实体数据。
 
 ### 一、引入maven依赖
 
@@ -26,47 +26,27 @@
 
 <br>
 
-### 二、使用自定义日志处理器
+### 二、自定义日志实体
 
-以常见的**日志需要落库**的需求举例。
+例如我们现在希望为日志实体添加一个`description`字段。
 
-#### 1、编写自定义日志处理器
-
-为了便于持久层调用（dao层调用），我们可以直接将处理器注册为组件。（也可以不注册，根据开发者需要即可）
-
-这里只是为了演示，所以就不做具体的落库操作了，以注释代替。
+只需要继承`log-helper`提供的`LogInfo`，补充自定义字段即可。
 
 ```java
 /**
  * @author Jyannis
- * @version 1.0 update on 2021/5/30
+ * @version 1.0 update on 2021/6/4
  */
-@Component
-public class LogStoreHandler extends AbstractLogHandler {
+public class GlobalLogInfo extends LogInfo {
 
-    /**
-     * 注入dao
-     * autowire dao
-     */
-//    @Autowired
-//    private MyDao myDao;
+    private String description;
 
-    @Override
-    public void processAround(LogInfo logInfo) {
-        /*
-        存库
-        store logInfo
-         */
-//        myDao.insert(logInfo);
+    public String getDescription() {
+        return description;
     }
 
-    @Override
-    public void processAfterThrow(LogInfo logInfo) {
-        /*
-        存库
-        store logInfo
-         */
-//        myDao.insert(logInfo);
+    public void setDescription(String description) {
+        this.description = description;
     }
 
 }
@@ -74,43 +54,163 @@ public class LogStoreHandler extends AbstractLogHandler {
 
 <br>
 
-#### 2、编写配置文件
+### 三、为实体注入信息
 
-1. 将我们自定义编写的日志处理器添加进`LogHandlerHolder`中，并为它添加一个key（下例中为"store"）
+`log-helper`提供的日志切面为开发者提供了钩子函数，可以在切面环绕通知前后为日志实体注入属性。
 
-   注：由于本例中将`LogStoreHandler`注册为了组件，所以要用参数注入或者`@Autowired`注入的方式，不能直接手动new。难以理解这一点的同学请搜索“Spring注入方式”进行学习。
+通过继承`AbstractLogAspectProcessor`可以实现这些函数。
 
-2. 在`LogFilterChainHolder`中添加需要的过滤器链
+- `buildLogInfo`
+
+  返回一个后续用来操作的日志实体，默认情况下使用的是`new LogInfo()`，这里我们可以返回自己的子类对象。
+
+- `preLogAround`
+
+  环绕通知前置钩子方法，我们可以在这里注入实体信息。
+
+- `postLogAround`
+
+  环绕通知后置钩子方法，本例中不做任何处理。
+
+- `preLogAfterThrow`
+
+  异常通知前置钩子方法，我们可以在这里注入实体信息。
+
+- `postLogAfterThrow`
+
+  异常通知后置钩子方法，本例中不做任何处理。
 
 ```java
 /**
  * @author Jyannis
- * @version 1.0 update on 2021/5/30
+ * @version 1.0 update on 2021/6/4
+ */
+public class GlobalLogAspectProcessor extends AbstractLogAspectProcessor {
+
+    @Override
+    public LogInfo buildLogInfo() {
+        return new GlobalLogInfo();
+    }
+
+    @Override
+    public void preLogAround(ProceedingJoinPoint joinPoint, LogInfo logInfo) {
+        setDescription(joinPoint,logInfo);
+    }
+
+    @Override
+    public void postLogAround(ProceedingJoinPoint proceedingJoinPoint, LogInfo logInfo) {
+
+    }
+
+    @Override
+    public void preLogAfterThrow(ProceedingJoinPoint joinPoint, LogInfo logInfo) {
+        setDescription(joinPoint,logInfo);
+    }
+
+    @Override
+    public void postLogAfterThrow(ProceedingJoinPoint proceedingJoinPoint, LogInfo logInfo) {
+
+    }
+
+    /**
+     * 以swagger为例，获取@ApiOperation上对接口的描述信息
+     * take swagger as an example, get the description of the API on @ApiOperation
+     * @param joinPoint
+     * @param logInfo
+     */
+    private void setDescription(ProceedingJoinPoint joinPoint, LogInfo logInfo){
+        MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
+        Method method = methodSignature.getMethod();
+        ApiOperation annotation = method.getAnnotation(ApiOperation.class);
+        if(annotation != null) {
+            ((GlobalLogInfo) logInfo).setDescription(annotation.value());
+        }
+    }
+}
+```
+
+<br>
+
+### 四、实现自定义日志处理器
+
+为了让修改后的日志实体数据体现出效果，自然也要做相应的日志处理。
+
+```java
+@Slf4j
+public class GlobalLogHandler extends AbstractLogHandler {
+
+    @Override
+    public void processAround(LogInfo logInfo) {
+        log.info("api description: {}",((GlobalLogInfo)logInfo).getDescription());
+        log.info("call method: {}",logInfo.getMethod());
+        log.info("call url: {}",logInfo.getLookupPath());
+        log.info("request params: {}",logInfo.getParams());
+        log.info("request ip: {}",logInfo.getRequestIp());
+        log.info("request address: {}",logInfo.getAddress());
+        log.info("request browser: {}",logInfo.getBrowser());
+        log.info("request time cost: {} ms",logInfo.getTime());
+    }
+
+    @Override
+    public void processAfterThrow(LogInfo logInfo) {
+        String stackTrace = ThrowableUtil.getStackTrace(logInfo.getThrowable());
+        log.error("api description: {}",((GlobalLogInfo)logInfo).getDescription());
+        log.error("call method: {}",logInfo.getMethod());
+        log.error("call url: {}",logInfo.getLookupPath());
+        log.error("request params: {}",logInfo.getParams());
+        log.error("request ip: {}",logInfo.getRequestIp());
+        log.error("request address: {}",logInfo.getAddress());
+        log.error("request browser: {}",logInfo.getBrowser());
+        log.error("request time cost: {} ms",logInfo.getTime());
+        log.error(stackTrace);
+    }
+
+}
+```
+
+<br>
+
+### 五、编写配置文件
+
+相比之前的配置，补充一个`LogAspectProcessor`即可。
+
+```java
+/**
+ * @author Jyannis
+ * @version 1.0 update on 2021/6/4
  */
 @Configuration
 public class LogHelperConfig {
-    
+
     @Bean
-    LogHandlerHolder logHandlerHolder(LogStoreHandler logStoreHandler){
+    LogAspectProcessor logAspectProcessor(){
+        return new GlobalLogAspectProcessor();
+    }
+
+    @Bean
+    LogHandlerHolder logHandlerHolder(){
         LogHandlerHolder logHandlerHolder = new LogHandlerHolder();
-        logHandlerHolder.addLogHandler("STORE",logStoreHandler);
+        logHandlerHolder.addLogHandler("GLOBAL",new GlobalLogHandler());
         return logHandlerHolder;
     }
 
     @Bean
     LogFilterChainHolder logFilterChainHolder(){
         LinkedHashMap<String, String> filterChainDefinitionMap = new LinkedHashMap<>();
-        filterChainDefinitionMap.put("/**", LogMode.ALL);
-        filterChainDefinitionMap.put("/body", "STORE");
+        filterChainDefinitionMap.put("/**", "GLOBAL");
         return new LogFilterChainHolder(filterChainDefinitionMap);
     }
-    
-}
 
+}
 ```
 
-此时启动项目，访问接口`/body`，即可触发`LogStoreHandler`来完成日志处理。
-
 <br>
 
 <br>
+
+运行项目，最后效果如下：
+
+```shell
+2021-06-05 00:43:22.744  INFO 11832 --- [nio-8080-exec-3] t.j.loghelperdemo.GlobalLogHandler       : api description: a body POST request
+```
+
